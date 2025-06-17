@@ -36,7 +36,7 @@ class SuscriptorGeneral(Suscriptor):
         self.nombre = nombre
 
     def actualizar(self, notificacion):
-        print(f"{self.nombre} recibió notificación: {notificacion.titulo}")
+        pass #print(f"{self.nombre} recibió notificación: {notificacion.titulo}")
 
 class SuscriptorTemperaturaAlta(Suscriptor):
     def __init__(self, nombre):
@@ -44,7 +44,7 @@ class SuscriptorTemperaturaAlta(Suscriptor):
 
     def actualizar(self, notificacion):
         if notificacion.categoria == "Temperatura" and notificacion.prioridad >= 8:
-            print(f"{self.nombre} alerta temperatura alta: {notificacion.titulo}")
+            print(f"{self.nombre}: {notificacion.titulo}")
 
 # --- Patron Chain of Responsibility para procesamiento de datos en pasos ---
 
@@ -83,8 +83,8 @@ class EstadisticasHandler(Handler):
             media_hum = hums[0] if hums else None
             desv_hum = 0
 
-        print(f"[Estadísticas] Media Temp: {media_temp}, Desv Temp: {desv_temp}")
-        print(f"[Estadísticas] Media Hum: {media_hum}, Desv Hum: {desv_hum}")
+        print(f"Media Temp: {media_temp}, Desv Temp: {desv_temp}")
+        print(f"Media Hum: {media_hum}, Desv Hum: {desv_hum}")
 
         # Guardamos estos estadísticos para siguiente paso en el objeto datos
         datos.estadisticas = {
@@ -96,13 +96,13 @@ class EstadisticasHandler(Handler):
         await super().manejar(datos)
 
 class UmbralTemperaturaHandler(Handler):
-    UMBRAL_TEMP = 25.0  # ejemplo de umbral en grados Celsius
+    UMBRAL_TEMP = 20.0  # ejemplo de umbral en grados Celsius
 
     async def manejar(self, datos):
         # Última temperatura recibida
         temp_actual = datos.ultimo_dato[1]
         if temp_actual > self.UMBRAL_TEMP:
-            print(f"[Alerta] Temperatura alta detectada: {temp_actual} > {self.UMBRAL_TEMP}")
+            print(f"Temperatura detectada: {temp_actual} > {self.UMBRAL_TEMP}")
             datos.publicador.notificar(
                 Notificacion(
                     titulo=f"Temperatura alta: {temp_actual}C",
@@ -122,7 +122,7 @@ class VariacionHandler(Handler):
 
         if temps and hums:
             if (max(temps) - min(temps)) > 2 or (max(hums) - min(hums)) > 2:
-                print(f"[Alerta] Variación en temperatura/humedad > 2 grados en últimos 30s")
+                print(f"Variación en temperatura/humedad > 2 grados en últimos 30s")
                 datos.publicador.notificar(
                     Notificacion(
                         titulo="Variación brusca en temperatura o humedad",
@@ -143,7 +143,7 @@ class CalculoMedia(CalculoStrategy):
         temps = list(map(lambda d: d[1], datos))
         if temps:
             media = sum(temps) / len(temps)
-            print(f"[Strategy] Media temperatura: {media:.2f}")
+            print(f"Media temperatura: {media:.2f}")
             return media
         return None
 
@@ -152,7 +152,7 @@ class CalculoDesviacion(CalculoStrategy):
         temps = list(map(lambda d: d[1], datos))
         if len(temps) > 1:
             desv = statistics.stdev(temps)
-            print(f"[Strategy] Desviación temperatura: {desv:.2f}")
+            print(f"Desviación temperatura: {desv:.2f}")
             return desv
         return 0
 
@@ -224,17 +224,16 @@ class DatosCamion(list):
         self.estadisticas = {}
         self.ultimo_dato = None
 
-# --- Simulación de recepción y procesamiento de datos de camiones ---
+# --- Simulación de recepción y procesamiento de datos de camiones (modificado con contador) ---
 
-async def simular_recepcion_datos(camion_id, datos_camion, adaptador_coord):
-    while True:
+async def simular_recepcion_datos(camion_id, datos_camion, adaptador_coord, max_datos=5):
+    for _ in range(max_datos):
         timestamp = datetime.datetime.now()
-        temperatura = round(random.uniform(15, 30), 2)  # Temperatura entre 15 y 30 °C
-        humedad = round(random.uniform(30, 70), 2)     # Humedad relativa entre 30% y 70%
+        temperatura = round(random.uniform(15, 30), 2)
+        humedad = round(random.uniform(30, 70), 2)
         lat_gms, lon_gms = generar_coordenadas_aleatorias()
         olc_code = adaptador_coord.convertir_a_olc(lat_gms, lon_gms)
 
-        # Guardar datos: (timestamp, temp, lon_decimal, lat_decimal, humedad)
         lon_decimal = gms_a_decimal(*lon_gms)
         lat_decimal = gms_a_decimal(*lat_gms)
 
@@ -243,43 +242,39 @@ async def simular_recepcion_datos(camion_id, datos_camion, adaptador_coord):
 
         print(f"Camión {camion_id} datos recibidos: temp={temperatura}°C, hum={humedad}%, OLC={olc_code}")
 
-        await asyncio.sleep(random.uniform(1, 3))  # Simula tiempo variable entre datos
+        await asyncio.sleep(random.uniform(1, 2))
 
-async def procesar_datos(camion_id, datos_camion, cadena_procesamiento):
-    while True:
-        if len(datos_camion) > 0:
-            await cadena_procesamiento.manejar(datos_camion)
-        await asyncio.sleep(5)  # Procesar cada 5 segundos
+# --- Procesamiento que se detiene tras cierto número de datos ---
 
-# --- Ejemplo principal para correr todo junto ---
+async def procesar_datos(camion_id, datos_camion, cadena_procesamiento, max_datos=5):
+    while len(datos_camion) < max_datos:
+        await asyncio.sleep(0.5)  # Espera a que haya datos suficientes
+    await cadena_procesamiento.manejar(datos_camion)
+
+# --- Main actualizado ---
 
 async def main():
     print("Sistema logístico iniciado.")
 
-    # Crear publicador y suscriptores
     publicador = Publicador()
-    suscriptor_general = SuscriptorGeneral("Administrador")
-    suscriptor_temp = SuscriptorTemperaturaAlta("AlertaTemperatura")
-    publicador.suscribir(suscriptor_general)
-    publicador.suscribir(suscriptor_temp)
+    publicador.suscribir(SuscriptorGeneral("Administrador"))
+    publicador.suscribir(SuscriptorTemperaturaAlta("AlertaTemperatura"))
 
-    # Crear adaptador para coordenadas
     sistema_gms = SistemaGMS()
     adaptador_coord = AdaptadorCoordenadas(sistema_gms)
 
-    # Datos y cadena de procesamiento para cada camión
     datos_camion1 = DatosCamion(publicador)
 
-    # Construir cadena de responsabilidad
     variacion_handler = VariacionHandler()
     umbral_handler = UmbralTemperaturaHandler(variacion_handler)
     estadisticas_handler = EstadisticasHandler(umbral_handler)
 
-    # Lanzar tareas concurrentes: simulación y procesamiento
     await asyncio.gather(
-        simular_recepcion_datos("Camion-01", datos_camion1, adaptador_coord),
-        procesar_datos("Camion-01", datos_camion1, estadisticas_handler)
+        simular_recepcion_datos("Camion-01", datos_camion1, adaptador_coord, max_datos=5),
+        procesar_datos("Camion-01", datos_camion1, estadisticas_handler, max_datos=5)
     )
+
+    print("Proceso finalizado tras 5 recepciones de datos.")
 
 if __name__ == "__main__":
     asyncio.run(main())
